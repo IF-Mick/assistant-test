@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI Assistants API Test</title>
+</head>
+<body>
+    <div>
+        <h2>Assistant Chat</h2>
+        <div id="chatBox" style="border:1px solid #000; height:200px; overflow-y:scroll; padding:10px;"></div>
+        <input type="text" id="userInput" placeholder="Type your message here">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput').value;
+            if (userInput.trim() === '') return;
+
+            displayMessage(userInput, 'user');
+
+            const endpoint = 'https://api.openai.com/v2/threads';
+            const body = {
+                assistant_id: 'YOUR_ASSISTANT_ID',
+                messages: [{ role: "user", content: userInput }]
+            };
+
+            const threadId = await createThread(endpoint, body);
+            document.getElementById('userInput').value = '';
+
+            if (threadId) {
+                const runId = await runAssistant(threadId);
+                if (runId) {
+                    await checkRunStatus(threadId, runId);
+                }
+            }
+        }
+
+        async function createThread(endpoint, body) {
+            const response = await fetch('/api/proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ endpoint, body })
+            });
+            const data = await response.json();
+            return data.thread_id;
+        }
+
+        async function runAssistant(threadId) {
+            const endpoint = `https://api.openai.com/v2/threads/${threadId}/runs`;
+            const response = await fetch('/api/proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ endpoint })
+            });
+            const data = await response.json();
+            return data.run_id;
+        }
+
+        async function checkRunStatus(threadId, runId) {
+            let status = 'running';
+            while (status === 'running') {
+                const endpoint = `https://api.openai.com/v2/threads/${threadId}/runs/${runId}`;
+                const response = await fetch('/api/proxy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ endpoint, method: 'GET' })
+                });
+                const data = await response.json();
+                status = data.status;
+                if (status === 'completed') {
+                    retrieveMessages(threadId);
+                }
+                await new Promise(resolve => setTimeout(resolve, 1000)); // wait 1 second before retrying
+            }
+        }
+
+        async function retrieveMessages(threadId) {
+            const endpoint = `https://api.openai.com/v2/threads/${threadId}/messages`;
+            const response = await fetch('/api/proxy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ endpoint, method: 'GET' })
+            });
+            const data = await response.json();
+            const botMessage = data.messages.find(msg => msg.role === 'assistant').content;
+            displayMessage(botMessage, 'bot');
+        }
+
+        function displayMessage(message, sender) {
+            const chatBox = document.getElementById('chatBox');
+            const messageElement = document.createElement('p');
+            messageElement.className = sender;
+            messageElement.textContent = message;
+            chatBox.appendChild(messageElement);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    </script>
+</body>
+</html>
